@@ -36,56 +36,42 @@
 // X Server includes
 #include <X11/Xutil.h>
 
-void XImage2RosImage(XImage& ximage, Display& _xDisplay, Screen& _xScreen,
-                     sensor_msgs::Image& im)
+void XImage2RosImage(XImage& ximage, Display& _xDisplay, Screen& _xScreen, sensor_msgs::Image& im)
 {
-  XColor color;
-
   im.header.stamp = ros::Time::now();
 
   if (_xScreen.depths->depth == 24)
   {
-    // the code just deleted here is probably more robust than
-    // a straight memcpy, but for now go without it.
     const int wd = ximage.width;
     const int ht = ximage.height;
     const int frame_size = wd * ht * 4;
     im.width = wd;
     im.height = ht;
     im.step = im.width * 4;
-    // TODO(lucasw) extract this from X
-    // im.encoding = sensor_msgs::image_encodings::BGRA8;
     im.data.resize(frame_size);
     memcpy(&im.data[0], ximage.data, frame_size);
   }
-  else     // Extremly slow alternative for non 24bit-depth
+  else
   {
     Colormap colmap = DefaultColormap(&_xDisplay, DefaultScreen(&_xDisplay));
+    XColor color;
     for (unsigned int x = 0; x < ximage.width; x++)
     {
       for (unsigned int y = 0; y < ximage.height; y++)
       {
         color.pixel = XGetPixel(&ximage, x, y);
         XQueryColor(&_xDisplay, colmap, &color);
-        // cv::Vec4b col = cv::Vec4b(color.blue, color.green, color.red,0);
-        // tmp.at<cv::Vec4b> (y,x) = col;
+        // fallback omitted
       }
     }
   }
-  return;
 }
-
 
 namespace screen_grab
 {
 
-ScreenGrab::ScreenGrab() :
-  x_offset_(0),
-  y_offset_(0),
-  width_(640),
-  height_(480),
-  first_error_(false)
-  // server_(dr_mutex_)  // this locks up
+ScreenGrab::ScreenGrab()
+  : x_offset_(0), y_offset_(0), width_(640), height_(480), first_error_(false)
 {
 }
 
@@ -95,54 +81,17 @@ void ScreenGrab::roiCallback(const sensor_msgs::RegionOfInterest::ConstPtr& msg)
   y_offset_ = msg->y_offset;
   width_ = msg->width;
   height_ = msg->height;
-
   updateConfig();
 }
 
 void ScreenGrab::checkRoi(int& x_offset, int& y_offset, int& width, int& height)
 {
-  // TODO(lucasw) with cv::Rect this could be one line rect1 & rect2
-
-  if(width == 0)
-  {
-    width = screen_w_;
-  }
-
-  if(height == 0)
-  {
-    height = screen_h_;
-  }
-
-  // Need to check against resolution
+  if (width == 0) width = screen_w_;
+  if (height == 0) height = screen_h_;
   if ((x_offset + width) > screen_w_)
-  {
-    // TBD need to more intelligently cap these
-    if (screen_w_ > width)
-    {
-      x_offset = screen_w_ - width;
-    }
-    else
-    {
-      x_offset = 0;
-      width = screen_w_;
-    }
-  }
-
+    x_offset = std::max(0, screen_w_ - width);
   if ((y_offset + height) > screen_h_)
-  {
-    // TBD need to more intelligently cap these
-    if (screen_h_ > height)
-    {
-      y_offset = screen_h_ - height;
-    }
-    else
-    {
-      y_offset = 0;
-      height = screen_h_;
-    }
-  }
-
-  // ROS_INFO_STREAM(x_offset << " " << y_offset << " " << width << " " << height);
+    y_offset = std::max(0, screen_h_ - height);
 }
 
 bool ScreenGrab::screenshotCallback(screen_grab::GetScreenshot::Request& req, screen_grab::GetScreenshot::Response& res)
@@ -150,9 +99,7 @@ bool ScreenGrab::screenshotCallback(screen_grab::GetScreenshot::Request& req, sc
   return grabRosImage(res.image);
 }
 
-void ScreenGrab::callback(
-  screen_grab::ScreenGrabConfig &config,
-  uint32_t level)
+void ScreenGrab::callback(screen_grab::ScreenGrabConfig& config, uint32_t level)
 {
   if (level & 1)
   {
@@ -165,11 +112,7 @@ void ScreenGrab::callback(
 
   if (level & 2)
   {
-    if (config.update_rate != update_rate_)
-    {
-      update_rate_ = config.update_rate;
-      // TODO(lucasw) update timer
-    }
+    update_rate_ = config.update_rate;
   }
 
   if (level & 3)
@@ -182,7 +125,6 @@ void ScreenGrab::updateConfig()
 {
   checkRoi(x_offset_, y_offset_, width_, height_);
 
-  // TODO(lucasw) just store config_ instead of x_offset_ etc.
   screen_grab::ScreenGrabConfig config;
   config.update_rate = update_rate_;
   config.publishing_enabled = publishing_enabled_;
@@ -196,64 +138,51 @@ void ScreenGrab::updateConfig()
 
 void ScreenGrab::onInit()
 {
-  screen_pub_ = getPrivateNodeHandle().advertise<sensor_msgs::Image>(
-                  "image", 5);
-  // TODO(lucasw) move most of this into onInit
-  // init
-  // from vimjay screencap.cpp (https://github.com/lucasw/vimjay)
+  ROS_INFO_STREAM("=== ScreenGrab::onInit() started ===");
+
+  ROS_INFO_STREAM("Trying to connect to X display: " << getenv("DISPLAY"));
+  display = XOpenDisplay(NULL);
+  if (!display)
   {
-    display = XOpenDisplay(NULL);  // Open first (-best) display
-    if (display == NULL)
-    {
-      ROS_ERROR_STREAM("bad display");
-      return;
-    }
-
-    screen = DefaultScreenOfDisplay(display);
-    if (screen == NULL)
-    {
-      ROS_ERROR_STREAM("bad screen");
-      return;
-    }
-
-    Window wid = DefaultRootWindow(display);
-    if (0 > wid)
-    {
-      ROS_ERROR_STREAM("Failed to obtain the root windows Id "
-                       "of the default screen of given display.\n");
-      return;
-    }
-
-    XWindowAttributes xwAttr;
-    Status ret = XGetWindowAttributes(display, wid, &xwAttr);
-    screen_w_ = xwAttr.width;
-    screen_h_ = xwAttr.height;
+    ROS_ERROR_STREAM("XOpenDisplay failed! DISPLAY=" << getenv("DISPLAY"));
+    return;
   }
+  ROS_INFO_STREAM("Connected to X display");
+
+  screen = DefaultScreenOfDisplay(display);
+  if (!screen)
+  {
+    ROS_ERROR_STREAM("DefaultScreenOfDisplay failed");
+    return;
+  }
+  ROS_INFO_STREAM("Got default screen");
+
+  Window wid = DefaultRootWindow(display);
+  if (wid <= 0)
+  {
+    ROS_ERROR_STREAM("Failed to get root window");
+    return;
+  }
+
+  XWindowAttributes xwAttr;
+  Status ret = XGetWindowAttributes(display, wid, &xwAttr);
+  screen_w_ = xwAttr.width;
+  screen_h_ = xwAttr.height;
+
+  ROS_INFO_STREAM("Screen dimensions: " << screen_w_ << "x" << screen_h_);
 
   double update_rate = 15;
   bool publishing_enabled = false;
-  int x_offset = 0;
-  int y_offset = 0;
-  int width = 0;
-  int height = 0;
+  int x_offset = 0, y_offset = 0, width = 0, height = 0;
 
-  bool rv0 = getPrivateNodeHandle().getParam("update_rate", update_rate);
-  bool rv1 = getPrivateNodeHandle().getParam("publishing_enabled", publishing_enabled);
-  bool rv2 = getPrivateNodeHandle().getParam("x_offset", x_offset);
-  bool rv3 = getPrivateNodeHandle().getParam("y_offset", y_offset);
-  bool rv4 = getPrivateNodeHandle().getParam("width", width);
-  bool rv5 = getPrivateNodeHandle().getParam("height", height);
+  ros::NodeHandle nh = getPrivateNodeHandle();
+  nh.getParam("update_rate", update_rate);
+  nh.getParam("publishing_enabled", publishing_enabled);
+  nh.getParam("x_offset", x_offset);
+  nh.getParam("y_offset", y_offset);
+  nh.getParam("width", width);
+  nh.getParam("height", height);
 
-  ROS_INFO_STREAM(static_cast<int>(rv0) << static_cast<int>(rv1)
-    << static_cast<int>(rv2) << static_cast<int>(rv3) << static_cast<int>(rv4) << static_cast<int>(rv5));
-  ROS_INFO_STREAM(update_rate << " " << publishing_enabled << " " << width << " " << height);
-  server_.reset(new ReconfigureServer(dr_mutex_, getPrivateNodeHandle()));
-
-  dynamic_reconfigure::Server<screen_grab::ScreenGrabConfig>::CallbackType cbt =
-    boost::bind(&ScreenGrab::callback, this, boost::placeholders::_1, boost::placeholders::_2);
-  server_->setCallback(cbt);
-
-  // TODO(lucasw) do I really need to do this, or does dr clobber my params?
   update_rate_ = update_rate;
   publishing_enabled_ = publishing_enabled;
   x_offset_ = x_offset;
@@ -261,71 +190,63 @@ void ScreenGrab::onInit()
   width_ = width;
   height_ = height;
 
-  // std::string encoding_str = "rgba8";
-  // getPrivateNodeHandle().getParam("encoding", encoding_str);
-  // encoding_ = cv_bridge::getCvType(encoding_str);
-  // ROS_INFO_STREAM(encoding_str << " -> " << encoding_);
-  getPrivateNodeHandle().getParam("encoding", encoding_);
+  nh.getParam("encoding", encoding_);
   ROS_INFO_STREAM("encoding: " << encoding_);
 
-  checkRoi(x_offset_, y_offset_, width_, height_);
+  server_.reset(new ReconfigureServer(dr_mutex_, nh));
+  ReconfigureServer::CallbackType cbt = boost::bind(&ScreenGrab::callback, this, _1, _2);
+  server_->setCallback(cbt);
+
   updateConfig();
 
-  roi_sub_ = getPrivateNodeHandle().subscribe("roi", 0, &ScreenGrab::roiCallback, this);
-  screenshot_service_ = getPrivateNodeHandle().advertiseService("get_screenshot", &ScreenGrab::screenshotCallback, this);
+  roi_sub_ = nh.subscribe("roi", 0, &ScreenGrab::roiCallback, this);
+
+  ROS_INFO_STREAM("About to advertise get_screenshot service...");
+  screenshot_service_ = nh.advertiseService("get_screenshot", &ScreenGrab::screenshotCallback, this);
+  ROS_INFO_STREAM("Successfully advertised get_screenshot service");
+
+  screen_pub_ = nh.advertise<sensor_msgs::Image>("image", 5);
 
   const float period = 1.0 / update_rate_;
-  ROS_INFO_STREAM("period " << period);
-  timer_ = getPrivateNodeHandle().createTimer(ros::Duration(period),
-           &ScreenGrab::spinOnce, this);
+  timer_ = nh.createTimer(ros::Duration(period), &ScreenGrab::spinOnce, this);
 }
 
-void ScreenGrab::spinOnce(const ros::TimerEvent& e)
+void ScreenGrab::spinOnce(const ros::TimerEvent&)
 {
   if (!publishing_enabled_)
-  {
     return;
-  }
 
   sensor_msgs::ImagePtr im(new sensor_msgs::Image);
-
   if (grabRosImage(*im))
-  {
     screen_pub_.publish(im);
-  }
 }
 
 bool ScreenGrab::grabRosImage(sensor_msgs::Image& im)
 {
-
-  // grab the image
   xImageSample = XGetImage(display, DefaultRootWindow(display),
-                           x_offset_, y_offset_, width_, height_, AllPlanes, ZPixmap);
+                           x_offset_, y_offset_, width_, height_,
+                           AllPlanes, ZPixmap);
 
-  // Check for bad null pointers
-  if (xImageSample == NULL)
+  if (!xImageSample)
   {
     if (first_error_)
-      ROS_ERROR_STREAM("Error taking screenshot! "
-                       << ", " << x_offset_ << " " << y_offset_
-                       << ", " << width_ << " " << height_
-                       << ", " << screen_w_ << " " << screen_h_);
+      ROS_ERROR_STREAM("Error taking screenshot! " << x_offset_ << " " << y_offset_
+                       << " " << width_ << " " << height_ << " "
+                       << screen_w_ << " " << screen_h_);
     first_error_ = false;
     return false;
   }
 
   if (!first_error_)
-    ROS_INFO_STREAM(width_ << " " << height_);
+    ROS_INFO_STREAM("Captured image: " << width_ << "x" << height_);
   first_error_ = true;
-  // convert to Image format
+
   XImage2RosImage(*xImageSample, *display, *screen, im);
-
   XDestroyImage(xImageSample);
-
   im.encoding = encoding_;
-
   return true;
 }
+
 }  // namespace screen_grab
 
 #include <pluginlib/class_list_macros.hpp>
