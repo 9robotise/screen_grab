@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(screen_grab)
 
+## Find dependencies
 find_package(catkin REQUIRED COMPONENTS
   dynamic_reconfigure
   message_generation
@@ -9,10 +10,17 @@ find_package(catkin REQUIRED COMPONENTS
   rospy
 )
 
-## Service and dynamic reconfigure definitions
+## First: call python setup before anything message-related
+catkin_python_setup()
+
+## Define service and dynamic reconfigure
 add_service_files(
   FILES
   GetScreenshot.srv
+)
+
+generate_dynamic_reconfigure_options(
+  cfg/ScreenGrab.cfg
 )
 
 generate_messages(
@@ -21,19 +29,15 @@ generate_messages(
   std_msgs
 )
 
-generate_dynamic_reconfigure_options(
-  cfg/ScreenGrab.cfg
-)
-
+## Declare package
 catkin_package(
   CATKIN_DEPENDS message_runtime rospy sensor_msgs std_msgs dynamic_reconfigure
 )
 
+## Include directories
 include_directories(
   ${catkin_INCLUDE_DIRS}
 )
-
-catkin_python_setup()
 
 ## Install Python script
 catkin_install_python(PROGRAMS
