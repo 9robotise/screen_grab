@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="2">
   <name>screen_grab</name>
-  <version>0.0.2</version>
-  <description>Publish a screen capture as an Image</description>
+  <version>0.0.3</version>
+  <description>Publish a screen capture as an Image using Python or C++ ROS nodes</description>
 
   <maintainer email="lucasw_backwards@gmail.com">Lucas Walter</maintainer>
   <license>BSD</license>
@@ -12,26 +12,22 @@
   <!-- Build tool -->
   <buildtool_depend>catkin</buildtool_depend>
 
-  <!-- Dependencies for build -->
-  <build_depend>cv_bridge</build_depend>
+  <!-- Build dependencies -->
   <build_depend>dynamic_reconfigure</build_depend>
-  <build_depend>image_transport</build_depend>
   <build_depend>message_generation</build_depend>
-  <build_depend>nodelet</build_depend>
-  <build_depend>roscpp</build_depend>
-  <build_depend>roslint</build_depend>
   <build_depend>sensor_msgs</build_depend>
   <build_depend>std_msgs</build_depend>
+  <build_depend>rospy</build_depend>
+  <build_depend>roscpp</build_depend>
+  <build_depend>nodelet</build_depend>
 
-  <!-- Dependencies for execution -->
-  <exec_depend>cv_bridge</exec_depend>
-  <exec_depend>dynamic_reconfigure</exec_depend>
-  <exec_depend>image_transport</exec_depend>
+  <!-- Run dependencies -->
   <exec_depend>message_runtime</exec_depend>
-  <exec_depend>nodelet</exec_depend>
-  <exec_depend>roscpp</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>std_msgs</exec_depend>
+  <exec_depend>rospy</exec_depend>
+  <exec_depend>roscpp</exec_depend>
+  <exec_depend>dynamic_reconfigure</exec_depend>
 
   <export>
     <nodelet plugin="${prefix}/nodelet_screen_grab.xml"/>

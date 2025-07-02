@@ -1,27 +1,20 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(screen_grab)
 
-## Find catkin macros and libraries
+## Catkin and system dependencies
 find_package(catkin REQUIRED COMPONENTS
-  cv_bridge
   dynamic_reconfigure
-  image_transport
   message_generation
-  nodelet
-  roscpp
-  roslint
   sensor_msgs
   std_msgs
+  rospy
+  roscpp
+  nodelet
 )
 
 find_package(OpenCV REQUIRED COMPONENTS highgui)
 
-roslint_cpp()
-
-################################################
-## Declare ROS messages, services and actions ##
-################################################
-
+## Message/service definitions
 add_service_files(
   FILES
   GetScreenshot.srv
@@ -37,52 +30,31 @@ generate_dynamic_reconfigure_options(
   cfg/ScreenGrab.cfg
 )
 
-###################################
-## catkin specific configuration ##
-###################################
-
+## Declare catkin package
 catkin_package(
-  LIBRARIES ${PROJECT_NAME}
-  CATKIN_DEPENDS message_runtime dynamic_reconfigure nodelet roscpp sensor_msgs std_msgs
+  CATKIN_DEPENDS message_runtime rospy roscpp sensor_msgs std_msgs dynamic_reconfigure nodelet
   DEPENDS OpenCV
 )
 
-###########
-## Build ##
-###########
-
+## Include directories
 include_directories(
   include
   ${catkin_INCLUDE_DIRS}
 )
 
+## Optional: C++ library and node (if still used)
 add_library(${PROJECT_NAME}
-  src/${PROJECT_NAME}.cpp
-)
-
-add_dependencies(${PROJECT_NAME}
-  ${${PROJECT_NAME}_EXPORTED_TARGETS}
-  ${catkin_EXPORTED_TARGETS}
-)
-
-target_link_libraries(${PROJECT_NAME}
-  ${catkin_LIBRARIES}
-  X11
+  src/screen_grab.cpp
 )
 
 add_executable(${PROJECT_NAME}_node
-  src/${PROJECT_NAME}_node.cpp
+  src/screen_grab_node.cpp
 )
 
-add_dependencies(${PROJECT_NAME}_node
-  ${${PROJECT_NAME}_EXPORTED_TARGETS}
-  ${catkin_EXPORTED_TARGETS}
-)
+target_link_libraries(${PROJECT_NAME} ${catkin_LIBRARIES} X11)
+target_link_libraries(${PROJECT_NAME}_node ${PROJECT_NAME})
 
-target_link_libraries(${PROJECT_NAME}_node
-  ${PROJECT_NAME}
-)
-
+## Optional: image_show nodelet
 add_library(image_show
   src/image_show.cpp
 )
@@ -92,10 +64,16 @@ target_link_libraries(image_show
   ${OpenCV_LIBRARIES}
 )
 
-#############
-## Install ##
-#############
+## Python setup
+catkin_python_setup()
 
+## Install Python ROS node
+catkin_install_python(PROGRAMS
+  src/screen_grab/main.py
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
+## Install other files
 install(TARGETS
   image_show
   ${PROJECT_NAME}
@@ -112,7 +90,7 @@ install(DIRECTORY include/${PROJECT_NAME}/
 
 install(FILES
   nodelet_image_show.xml
-  nodelet_${PROJECT_NAME}.xml
+  nodelet_screen_grab.xml
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 )
 
